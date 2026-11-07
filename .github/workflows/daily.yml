@@ -1,11 +1,8 @@
 name: Daily GEX Update
-
 on:
   schedule:
-    # Runs at 4:15 PM EST (21:15 UTC) Monday-Friday
     - cron: '15 21 * * 1-5'
-  workflow_dispatch: # Allows you to run it manually
-
+  workflow_dispatch:
 jobs:
   update-data:
     runs-on: ubuntu-latest
@@ -14,22 +11,18 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
-        
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          
       - name: Install dependencies
         run: pip install yfinance pandas numpy scipy
-        
       - name: Run GEX Logger
         run: python syndicate_logger.py
-        
       - name: Commit and Push new data
         run: |
           git config --global user.name 'Syndicate Bot'
           git config --global user.email 'bot@syndicate.com'
           git add syndicate_gex_history.csv
-          git commit -m "Auto-update GEX data" || echo "No changes to commit"
+          git commit -m "Auto-update GEX data" || echo "No changes"
           git push
