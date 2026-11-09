@@ -8,7 +8,7 @@ import csv
 from datetime import datetime, time as dt_time
 import pytz
 
-WEBHOOK_URL = os.environ.get("https://discord.com/api/webhooks/1569276489071984726/_LnpEoz9Eu6AYJh1vOu6alasfq_H4LrSLXHr0FsO9Xm8o0ZwvmY5mHLm0XLQs1RBxZYM")
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 TICKERS = ['NQ=F', 'ES=F', 'YM=F', 'RTY=F']
 SYMBOL_NAMES = {'NQ=F': 'NAS100', 'ES=F': 'US500', 'YM=F': 'US30', 'RTY=F': 'US2000'}
 STATE_FILE = "last_alert.json"
@@ -48,8 +48,8 @@ def scan_market():
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     
-    # Run scanner right after the 10 AM candle closes
-    if not (dt_time(11, 0) <= now_est.time() <= dt_time(12, 0)):
+    # Run scanner right after the 11:00 AM and 12:00 PM candles close
+    if not (dt_time(11, 0) <= now_est.time() <= dt_time(13, 30)):
         print("Outside of 1H trading window. Skipping.")
         return
         
@@ -59,7 +59,7 @@ def scan_market():
 
     for ticker in TICKERS:
         try:
-            # FETCHING 1-HOUR DATA NOW
+            # FETCHING 1-HOUR DATA
             df = yf.download(ticker, period='1mo', interval='1h', progress=False)
             if df.empty: continue
             
@@ -79,7 +79,7 @@ def scan_market():
             range_high = range_window['high'].max()
             range_low = range_window['low'].min()
             
-            # Check the 11 AM candle for the fakeout
+            # Check the 11 AM candle onwards for the fakeout
             post_10 = df[df.index.time >= dt_time(11, 0)]
             
             for idx, row in post_10.iterrows():
