@@ -3,7 +3,7 @@ name: Powell Fakeout Scanner (1H)
 on:
   schedule:
     # Runs at 12:01 PM EST (17:01 UTC) and 1:01 PM EST (18:01 UTC) Mon-Fri
-    # This catches the close of the 11:00 AM candle.
+    # This catches the close of the 11:00 AM and 12:00 PM candles.
     - cron: '1 17,18 * * 1-5'
   workflow_dispatch: # Allows manual testing
 
@@ -34,12 +34,12 @@ jobs:
           git config --global user.name 'Syndicate Bot'
           git config --global user.email 'bot@syndicate.com'
           
-          # Pull the latest changes just in case
+          # Pull the latest changes
           git pull origin main
           
-          # Add all changed files safely
+          # Add all changed files
           git add -A
           
           # Commit and push only if there are actual changes
-          git diff-index --quiet HEAD || git commit -m "Auto-update: Trade Journal & State"
+          git diff-index --quiet HEAD || git commit -m "Auto-update: 1H Trade Journal & State"
           git push origin main
