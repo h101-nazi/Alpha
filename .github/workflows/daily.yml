@@ -4,13 +4,13 @@ on:
   schedule:
     # Runs at 4:15 PM EST (21:15 UTC) Monday-Friday
     - cron: '15 21 * * 1-5'
-  workflow_dispatch: # Allows you to run it manually from the Actions tab
+  workflow_dispatch: 
 
 jobs:
   update-data:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Crucial: Allows the bot to push the CSV back to the repo
+      contents: write 
       
     steps:
       - name: Checkout Repository
@@ -35,11 +35,11 @@ jobs:
           git config --global user.name 'Syndicate Bot'
           git config --global user.email 'bot@syndicate.com'
           
-          # Pull the latest changes (in case Powell bot just ran)
+          # Pull the latest changes
           git pull origin main
           
-          # ONLY add the GEX journal file
-          git add syndicate_gex_journal.csv
+          # THE FIX: Add all changed files. If the CSV doesn't exist, it won't crash.
+          git add -A
           
           # Commit and push only if there are actual changes
           git diff-index --quiet HEAD || git commit -m "Auto-update: GEX Journal"
