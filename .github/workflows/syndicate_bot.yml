@@ -1,0 +1,39 @@
+name: Syndicate Bot
+
+on:
+  schedule:
+    # Runs every 5 minutes. The Python script handles the time gates.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: pip install yfinance pandas numpy requests pytz lse-data
+        
+      - name: Run Bot
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
+        run: python syndicate_bot.py
+        
+      - name: Save State and Journals
+        run: |
+          git config --global user.name 'Syndicate Bot'
+          git config --global user.email 'bot@syndicate.com'
+          git pull origin main
+          git add -A
+          git diff-index --quiet HEAD || git commit -m "Auto-update: Journal and State"
+          git push origin main
