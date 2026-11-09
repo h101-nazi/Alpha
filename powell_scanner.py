@@ -8,7 +8,7 @@ import csv
 from datetime import datetime, time as dt_time
 import pytz
 
-WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+WEBHOOK_URL = os.environ.get("https://discord.com/api/webhooks/1569276489071984726/_LnpEoz9Eu6AYJh1vOu6alasfq_H4LrSLXHr0FsO9Xm8o0ZwvmY5mHLm0XLQs1RBxZYM")
 TICKERS = ['NQ=F', 'ES=F', 'YM=F', 'RTY=F']
 SYMBOL_NAMES = {'NQ=F': 'NAS100', 'ES=F': 'US500', 'YM=F': 'US30', 'RTY=F': 'US2000'}
 STATE_FILE = "last_alert.json"
