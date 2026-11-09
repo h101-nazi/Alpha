@@ -1,93 +1,89 @@
-import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
-from scipy.stats import norm
+import requests
 import os
+import csv
+import time
+from datetime import datetime
+import pytz
+from lse import LSE
 
-def bs_gamma(S, K, T, r, sigma):
-    if T <= 0 or sigma <= 0 or S <= 0: return 0
-    d1 = (np.log(S/K) + (r + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
-    return norm.pdf(d1) / (S * sigma * np.sqrt(T))
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+LSE_API_KEY = os.environ.get("LSE_API_KEY")
 
-def log_gex(tickers=["SPY", "QQQ", "NVDA", "AAPL", "TSLA"]):
-    out_file = "syndicate_gex_history.csv"
-    rows = []
-    now = datetime.now()
+TICKERS = ["SPY", "QQQ", "IWM", "DIA", "AAPL", "MSFT", "NVDA", "TSLA", 
+           "AMZN", "META", "GOOGL", "AMD", "NFLX", "JPM", "GLD"]
+JOURNAL_FILE = "syndicate_gex_journal.csv"
+
+client = LSE(api_key=LSE_API_KEY)
+
+def journal_trade(ticker, action, entry, target, regime):
+    file_exists = os.path.isfile(JOURNAL_FILE)
+    with open(JOURNAL_FILE, mode='a', newline='') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["Date", "Time_EST", "Ticker", "Action", "Entry", "Target_5D", "Regime", "Result"])
+        
+        est = pytz.timezone('US/Eastern')
+        now = datetime.now(est)
+        writer.writerow([
+            now.strftime("%Y-%m-%d"),
+            now.strftime("%H:%M:%S"),
+            ticker,
+            action,
+            round(entry, 2),
+            round(target, 2),
+            regime,
+            "PENDING"
+        ])
+
+def scan_gex():
+    print("Scanning GEX for all tickers...")
     
-    for ticker in tickers:
+    for ticker in TICKERS:
         try:
-            t = yf.Ticker(ticker)
-            hist = t.history(period="1d")
-            if hist.empty: continue
-            spot = hist["Close"].iloc[-1]
+            chain = client.options(ticker, max_dte=30)
+            if not chain: continue
+                
+            df = pd.DataFrame(chain)
+            df = df.dropna(subset=['gamma', 'strike', 'volume_today'])
+            df = df[df['volume_today'] > 0]
             
-            exps = t.options
-            if not exps: continue
-            exp = exps[0]
-            opt = t.option_chain(exp)
+            if df.empty: continue
+                
+            spot = df['greeks_underlying_price'].iloc[0]
             
-            exp_date = pd.to_datetime(exp).tz_localize("UTC")
-            T = (exp_date - pd.Timestamp.now(tz="UTC")).total_seconds() / (365.25 * 24 * 3600)
-            if T <= 0: continue
+            df['gex'] = df['gamma'] * df['volume_today'] * 100 * (spot ** 2) * 0.01
+            calls = df[df['contract_type'] == 'call']
+            puts = df[df['contract_type'] == 'put']
             
-            call_gex, put_gex = 0, 0
-            max_pain_calls, max_pain_puts = {}, {}
-            total_call_oi, total_put_oi = 0, 0
-            atm_iv = 0
+            call_wall = calls.loc[calls['gex'].idxmax()]['strike'] if not calls.empty else spot
+            put_wall = puts.loc[puts['gex'].idxmax()]['strike'] if not puts.empty else spot
             
-            # Find ATM Strike
-            strikes = opt.calls['strike'].values
-            atm_strike = strikes[np.argmin(np.abs(strikes - spot))]
+            total_gex = calls['gex'].sum() - puts['gex'].sum()
             
-            for _, row in opt.calls.iterrows():
-                total_call_oi += row["openInterest"]
-                if row["strike"] == atm_strike:
-                    atm_iv = row["impliedVolatility"] * 100 # Convert to percentage
+            # --- THE GEX CALL WALL EDGE ---
+            # If Positive Gamma AND spot is within 0.5% of Call Wall -> SHORT
+            if total_gex > 0:
+                dist_to_call = (call_wall - spot) / spot
+                
+                if -0.005 <= dist_to_call <= 0.005:
+                    msg = f"🚨 **GEX SHORT SIGNAL: {ticker}** 🚨\n"
+                    msg += f"Positive Gamma Regime. Price is touching the Call Wall.\n"
+                    msg += f"**Entry:** {spot:.2f}\n"
+                    msg += f"**Call Wall (Target):** {call_wall:.2f}\n"
+                    msg += f"**Hold:** 5 Days"
                     
-                if row["openInterest"] > 0 and row["impliedVolatility"] > 0:
-                    g = bs_gamma(spot, row["strike"], T, 0.05, row["impliedVolatility"])
-                    call_gex += g * row["openInterest"] * 100 * spot
-                    max_pain_calls[row["strike"]] = row["openInterest"]
+                    if WEBHOOK_URL:
+                        requests.post(WEBHOOK_URL, json={"content": msg})
                     
-            for _, row in opt.puts.iterrows():
-                total_put_oi += row["openInterest"]
-                if row["openInterest"] > 0 and row["impliedVolatility"] > 0:
-                    g = bs_gamma(spot, row["strike"], T, 0.05, row["impliedVolatility"])
-                    put_gex -= g * row["openInterest"] * 100 * spot
-                    max_pain_puts[row["strike"]] = row["openInterest"]
+                    journal_trade(ticker, "SHORT", spot, put_wall, "POSITIVE")
+                    print(f"✅ Logged SHORT signal for {ticker}")
                     
-            total_gex = call_gex + put_gex
-            call_wall = max(max_pain_calls, key=max_pain_calls.get) if max_pain_calls else spot
-            put_wall = max(max_pain_puts, key=max_pain_puts.get) if max_pain_puts else spot
-            
-            # Calculate PCR
-            pcr_oi = total_put_oi / total_call_oi if total_call_oi > 0 else 0
-            
-            rows.append({
-                "Date": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "Ticker": ticker,
-                "Spot": spot,
-                "Total_GEX": total_gex,
-                "Call_Wall": call_wall,
-                "Put_Wall": put_wall,
-                "ATM_IV": atm_iv,
-                "PCR_OI": pcr_oi
-            })
-            print(f"✅ Logged {ticker}")
+            time.sleep(0.5)
+                
         except Exception as e:
-            print(f"❌ Failed {ticker}: {e}")
-            
-    if rows:
-        df = pd.DataFrame(rows)
-        # If file exists, align columns
-        if os.path.exists(out_file):
-            existing_df = pd.read_csv(out_file)
-            df = pd.concat([existing_df, df], ignore_index=True)
-            df.to_csv(out_file, index=False)
-        else:
-            df.to_csv(out_file, index=False)
-        print("✅ Saved to CSV")
+            print(f"Error scanning {ticker}: {e}")
 
 if __name__ == "__main__":
-    log_gex()
+    scan_gex()
