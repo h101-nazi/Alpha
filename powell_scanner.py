@@ -24,6 +24,10 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f)
 
+def send_discord(msg):
+    if WEBHOOK_URL:
+        requests.post(WEBHOOK_URL, json={"content": msg})
+
 def journal_trade(ticker, direction, entry, stop, target):
     file_exists = os.path.isfile(JOURNAL_FILE)
     with open(JOURNAL_FILE, mode='a', newline='') as f:
@@ -48,18 +52,21 @@ def scan_market():
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     
-    # Run scanner between 10:10 AM and 11:30 AM EST
+    # Print to GitHub logs
+    print(f"Scanning at {now_est.strftime('%H:%M')} EST...")
+    
     if not (dt_time(10, 10) <= now_est.time() <= dt_time(11, 30)):
-        print("Outside of 5m trading window. Skipping.")
+        send_discord("⚙️ **Powell Scanner:** Woke up, but it is outside the 10:10 AM - 11:30 AM EST trading window. Sleeping.")
+        print("Outside of trading window.")
         return
         
-    print(f"Scanning 5m data at {now_est.strftime('%H:%M')} EST...")
     state = load_state()
     today = now_est.strftime("%Y-%m-%d")
+    trades_found = False
+    scan_results = []
 
     for ticker in TICKERS:
         try:
-            # FETCHING 5-MINUTE DATA
             df = yf.download(ticker, period='1d', interval='5m', progress=False)
             if df.empty: continue
             
@@ -71,13 +78,11 @@ def scan_market():
             df['ATR'] = df['TR'].rolling(window=14).mean()
             df['Vol_Avg'] = df['volume'].rolling(window=20).mean()
             
-            # Define the 9:50-10:10 range
             range_window = df.between_time('09:50', '10:10')
             if len(range_window) < 4: continue
             range_high = range_window['high'].max()
             range_low = range_window['low'].min()
             
-            # Check 10:10 AM onwards for the fakeout
             post_10 = df[df.index.time > dt_time(10, 10)]
             
             for idx, row in post_10.iterrows():
@@ -89,6 +94,7 @@ def scan_market():
                 vol_ok = row['volume'] > (row['Vol_Avg'] * 1.2)
 
                 if (is_short or is_long) and vol_ok:
+                    trades_found = True
                     direction = "SHORT" if is_short else "LONG"
                     entry = row['close']
                     stop = (row['high'] + (row['ATR'] * 0.5)) if is_short else (row['low'] - (row['ATR'] * 0.5))
@@ -101,12 +107,8 @@ def scan_market():
                     msg += f"**Stop Loss:** {stop:.2f}\n"
                     msg += f"**Target (1.5R):** {target:.2f}"
                     
-                    if WEBHOOK_URL:
-                        requests.post(WEBHOOK_URL, json={"content": msg})
-                        print(f"Alert sent for {ticker}")
-                    
+                    send_discord(msg)
                     journal_trade(SYMBOL_NAMES[ticker], direction, entry, stop, target)
-                    print(f"Logged {ticker} to journal.")
                     
                     state[ticker] = today
                     save_state(state)
@@ -114,6 +116,11 @@ def scan_market():
 
         except Exception as e:
             print(f"Error scanning {ticker}: {e}")
+
+    if not trades_found:
+        heartbeat = f"⚙️ **Powell Scanner Check:** Scanned {len(TICKERS)} tickers. No valid fakeout setups found at {now_est.strftime('%H:%M')} EST. Waiting for the next 5-min bar."
+        send_discord(heartbeat)
+        print(heartbeat)
 
 if __name__ == "__main__":
     scan_market()
