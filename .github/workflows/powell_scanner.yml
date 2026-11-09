@@ -2,21 +2,20 @@ name: Powell Fakeout Scanner
 
 on:
   schedule:
-    # Runs every 5 minutes between 3:00 PM and 5:00 PM UTC (10 AM - 12 PM EST)
-    - cron: '*/5 15-17 * * 1-5'
-  workflow_dispatch: # Allows manual testing
+    - cron: '*/5 15-17 * * 1-5' # Every 5 mins from 10 AM to 12 PM EST
+  workflow_dispatch: 
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Crucial for pushing changes back to the repo
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           
@@ -32,7 +31,13 @@ jobs:
         run: |
           git config --global user.name 'Syndicate Bot'
           git config --global user.email 'bot@syndicate.com'
-          git add last_alert.json
-          git add powell_trade_journal.csv
-          git commit -m "Auto-update: Trade Journal & State" || echo "No changes to commit"
-          git push
+          
+          # Pull the latest changes just in case another run committed something
+          git pull origin main
+          
+          # Add all changed files safely (ignores files that don't exist yet)
+          git add -A
+          
+          # Commit and push only if there are actual changes
+          git diff-index --quiet HEAD || git commit -m "Auto-update: Trade Journal & State"
+          git push origin main
