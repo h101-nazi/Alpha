@@ -1,28 +1,38 @@
-name: Daily GEX Update
+name: Syndicate GEX Logger
+
 on:
   schedule:
     - cron: '15 21 * * 1-5'
   workflow_dispatch:
+
 jobs:
   update-data:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Python
-        uses: actions/setup-python@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install
-        run: pip install yfinance pandas numpy scipy
-      - name: Run
+          
+      - name: Install dependencies
+        run: pip install lse-data pandas numpy requests pytz
+        
+      - name: Run GEX Logger
+        env:
+          LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python syndicate_logger.py
-      - name: Commit
+        
+      - name: Commit and Push new data
         run: |
-          git config --global user.name 'Bot'
-          git config --global user.email 'bot@bot.com'
-          git add syndicate_gex_history.csv
-          git commit -m "update data" || echo "no changes"
+          git config --global user.name 'Syndicate Bot'
+          git config --global user.email 'bot@syndicate.com'
+          git pull origin main
+          git add syndicate_gex_journal.csv
+          git commit -m "Auto-update: GEX Journal" || echo "No changes"
           git push
