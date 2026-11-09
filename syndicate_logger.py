@@ -33,14 +33,25 @@ def log_gex(tickers=["SPY", "QQQ", "NVDA", "AAPL", "TSLA"]):
             
             call_gex, put_gex = 0, 0
             max_pain_calls, max_pain_puts = {}, {}
+            total_call_oi, total_put_oi = 0, 0
+            atm_iv = 0
+            
+            # Find ATM Strike
+            strikes = opt.calls['strike'].values
+            atm_strike = strikes[np.argmin(np.abs(strikes - spot))]
             
             for _, row in opt.calls.iterrows():
+                total_call_oi += row["openInterest"]
+                if row["strike"] == atm_strike:
+                    atm_iv = row["impliedVolatility"] * 100 # Convert to percentage
+                    
                 if row["openInterest"] > 0 and row["impliedVolatility"] > 0:
                     g = bs_gamma(spot, row["strike"], T, 0.05, row["impliedVolatility"])
                     call_gex += g * row["openInterest"] * 100 * spot
                     max_pain_calls[row["strike"]] = row["openInterest"]
                     
             for _, row in opt.puts.iterrows():
+                total_put_oi += row["openInterest"]
                 if row["openInterest"] > 0 and row["impliedVolatility"] > 0:
                     g = bs_gamma(spot, row["strike"], T, 0.05, row["impliedVolatility"])
                     put_gex -= g * row["openInterest"] * 100 * spot
@@ -50,13 +61,18 @@ def log_gex(tickers=["SPY", "QQQ", "NVDA", "AAPL", "TSLA"]):
             call_wall = max(max_pain_calls, key=max_pain_calls.get) if max_pain_calls else spot
             put_wall = max(max_pain_puts, key=max_pain_puts.get) if max_pain_puts else spot
             
+            # Calculate PCR
+            pcr_oi = total_put_oi / total_call_oi if total_call_oi > 0 else 0
+            
             rows.append({
                 "Date": now.strftime("%Y-%m-%d %H:%M:%S"),
                 "Ticker": ticker,
                 "Spot": spot,
                 "Total_GEX": total_gex,
                 "Call_Wall": call_wall,
-                "Put_Wall": put_wall
+                "Put_Wall": put_wall,
+                "ATM_IV": atm_iv,
+                "PCR_OI": pcr_oi
             })
             print(f"✅ Logged {ticker}")
         except Exception as e:
@@ -64,10 +80,13 @@ def log_gex(tickers=["SPY", "QQQ", "NVDA", "AAPL", "TSLA"]):
             
     if rows:
         df = pd.DataFrame(rows)
+        # If file exists, align columns
         if os.path.exists(out_file):
-            df.to_csv(out_file, mode='a', header=False, index=False)
+            existing_df = pd.read_csv(out_file)
+            df = pd.concat([existing_df, df], ignore_index=True)
+            df.to_csv(out_file, index=False)
         else:
-            df.to_csv(out_file, mode='w', header=True, index=False)
+            df.to_csv(out_file, index=False)
         print("✅ Saved to CSV")
 
 if __name__ == "__main__":
