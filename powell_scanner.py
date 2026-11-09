@@ -48,39 +48,37 @@ def scan_market():
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     
-    # Run scanner right after the 11:00 AM and 12:00 PM candles close
-    if not (dt_time(11, 0) <= now_est.time() <= dt_time(13, 30)):
-        print("Outside of 1H trading window. Skipping.")
+    # Run scanner between 10:10 AM and 11:30 AM EST
+    if not (dt_time(10, 10) <= now_est.time() <= dt_time(11, 30)):
+        print("Outside of 5m trading window. Skipping.")
         return
         
-    print(f"Scanning 1H data at {now_est.strftime('%H:%M')} EST...")
+    print(f"Scanning 5m data at {now_est.strftime('%H:%M')} EST...")
     state = load_state()
     today = now_est.strftime("%Y-%m-%d")
 
     for ticker in TICKERS:
         try:
-            # FETCHING 1-HOUR DATA
-            df = yf.download(ticker, period='1mo', interval='1h', progress=False)
+            # FETCHING 5-MINUTE DATA
+            df = yf.download(ticker, period='1d', interval='5m', progress=False)
             if df.empty: continue
             
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             df.columns = [c.lower() for c in df.columns]
             df.index = df.index.tz_convert('America/New_York')
             
-            df['SMA_200'] = df['close'].rolling(window=200).mean()
-            df['Typical'] = (df['high'] + df['low'] + df['close']) / 3
-            df['VWAP'] = (df['Typical'] * df['volume']).cumsum() / df['volume'].cumsum()
             df['TR'] = np.maximum(df['high'] - df['low'], np.maximum(abs(df['high'] - df['close'].shift(1)), abs(df['low'] - df['close'].shift(1))))
             df['ATR'] = df['TR'].rolling(window=14).mean()
+            df['Vol_Avg'] = df['volume'].rolling(window=20).mean()
             
-            # The 10 AM candle is the only one we care about for the range
-            range_window = df.between_time('10:00', '10:00')
-            if len(range_window) < 1: continue
+            # Define the 9:50-10:10 range
+            range_window = df.between_time('09:50', '10:10')
+            if len(range_window) < 4: continue
             range_high = range_window['high'].max()
             range_low = range_window['low'].min()
             
-            # Check the 11 AM candle onwards for the fakeout
-            post_10 = df[df.index.time >= dt_time(11, 0)]
+            # Check 10:10 AM onwards for the fakeout
+            post_10 = df[df.index.time > dt_time(10, 10)]
             
             for idx, row in post_10.iterrows():
                 if state.get(ticker) == today:
@@ -88,15 +86,16 @@ def scan_market():
 
                 is_short = (row['high'] > range_high and row['close'] < range_high)
                 is_long = (row['low'] < range_low and row['close'] > range_low)
+                vol_ok = row['volume'] > (row['Vol_Avg'] * 1.2)
 
-                if is_short or is_long:
+                if (is_short or is_long) and vol_ok:
                     direction = "SHORT" if is_short else "LONG"
                     entry = row['close']
                     stop = (row['high'] + (row['ATR'] * 0.5)) if is_short else (row['low'] - (row['ATR'] * 0.5))
                     risk = abs(stop - entry)
                     target = entry - (risk * 1.5) if is_short else entry + (risk * 1.5)
                     
-                    msg = f"🚨 **{direction} SIGNAL: {SYMBOL_NAMES[ticker]} (1H)** 🚨\n"
+                    msg = f"🚨 **{direction} SIGNAL: {SYMBOL_NAMES[ticker]} (5m)** 🚨\n"
                     msg += f"Fakeout Sweep on 10 AM Range.\n"
                     msg += f"**Entry:** {entry:.2f}\n"
                     msg += f"**Stop Loss:** {stop:.2f}\n"
