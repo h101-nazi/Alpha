@@ -2,9 +2,9 @@ name: Powell Fakeout Scanner (5m)
 
 on:
   schedule:
-    # Runs every 5 minutes between 10:10 AM and 11:30 AM EST
-    - cron: '10,15,20,25,30,35,40,45,50,55 14 * * 1-5'
-    - cron: '0,5,10,15,20,25,30 15 * * 1-5'
+    # Runs every 5 minutes from 10:10 AM to 11:30 AM EST (15:10 to 16:30 UTC)
+    - cron: '10,15,20,25,30,35,40,45,50,55 15 * * 1-5'
+    - cron: '0,5,10,15,20,25,30 16 * * 1-5'
   workflow_dispatch: 
 
 jobs:
@@ -33,7 +33,13 @@ jobs:
         run: |
           git config --global user.name 'Syndicate Bot'
           git config --global user.email 'bot@syndicate.com'
+          
+          # Pull the latest changes just in case another bot ran
           git pull origin main
-          git add powell_trade_journal.csv powell_last_alert.json
+          
+          # THE FIX: Add all changed files. If the journal doesn't exist yet, it won't crash.
+          git add -A
+          
+          # Commit and push only if there are actual changes
           git diff-index --quiet HEAD || git commit -m "Auto-update: Powell 5m Journal & State"
-          git push
+          git push origin main
