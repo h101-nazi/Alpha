@@ -2,7 +2,7 @@ name: Powell Fakeout Scanner (5m)
 
 on:
   schedule:
-    # Runs every 5 minutes between 2:10 PM and 3:30 PM UTC (10:10 AM - 11:30 AM EST)
+    # Runs every 5 minutes between 10:10 AM and 11:30 AM EST
     - cron: '10,15,20,25,30,35,40,45,50,55 14 * * 1-5'
     - cron: '0,5,10,15,20,25,30 15 * * 1-5'
   workflow_dispatch: 
@@ -34,6 +34,6 @@ jobs:
           git config --global user.name 'Syndicate Bot'
           git config --global user.email 'bot@syndicate.com'
           git pull origin main
-          git add -A
-          git diff-index --quiet HEAD || git commit -m "Auto-update: 5m Trade Journal & State"
-          git push origin main
+          git add powell_trade_journal.csv powell_last_alert.json
+          git diff-index --quiet HEAD || git commit -m "Auto-update: Powell 5m Journal & State"
+          git push
